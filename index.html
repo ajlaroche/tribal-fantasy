@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Tribal Fantasy</title>
+  <meta name="description" content="Weekly pick'em fantasy league for fans of island reality competition shows.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div class="brand"><span class="flame" aria-hidden="true">🔥</span> <span id="league-name">Tribal Fantasy</span></div>
+      <button class="ghost small" data-action="refresh" aria-label="Refresh">↻</button>
+    </div>
+    <nav class="wrap tabs" id="tabs" aria-label="Sections"></nav>
+  </header>
+  <main class="wrap" id="app" aria-live="polite">
+    <p class="muted">Loading…</p>
+  </main>
+  <footer class="wrap foot" id="foot"></footer>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="scoring.js"></script>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
