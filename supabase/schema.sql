@@ -27,8 +27,10 @@ create table if not exists castaways (
   name        text not null,
   tribe       text,
   status      text not null default 'in' check (status in ('in', 'out', 'winner')),
-  out_episode int
+  out_episode int,
+  photo_url   text            -- e.g. img/cast/rob.webp (relative to the site) or a full https URL
 );
+alter table castaways add column if not exists photo_url text;
 
 create table if not exists episodes (
   number  int primary key,

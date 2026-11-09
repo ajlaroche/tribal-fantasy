@@ -49,6 +49,10 @@
   };
   const inPlay = () => S.data.castaways.filter(c => c.status === 'in');
   const tribes = () => [...new Set(inPlay().map(c => c.tribe).filter(Boolean))].sort();
+  const initials = name => String(name || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  // Photo if we have one; initials circle otherwise (and if the photo fails to load).
+  const avatar = (c, size) => `<span class="avatar${size === 'sm' ? ' sm' : ''}" aria-hidden="true"><span>${esc(initials(c.name))}</span>${c.photo_url
+    ? `<img src="${attr(c.photo_url)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
   const mgrName = id => S.data.managers.find(m => m.id === id)?.name || 'Someone';
 
   function epStatus(ep) {
@@ -282,9 +286,10 @@
   function viewCast() {
     const bootCounts = {};
     S.data.revealedPicks.forEach(p => { if (p.boot != null) bootCounts[p.boot] = (bootCounts[p.boot] || 0) + 1; });
-    const card = c => `<div class="cast${c.status === 'out' ? ' out' : ''}"><div class="name">${esc(c.name)}${c.status === 'winner' ? ' 🏆' : ''}</div>
+    const card = c => `<div class="cast${c.status === 'out' ? ' out' : ''}">${avatar(c)}
+      <div class="cast-info"><div class="name">${esc(c.name)}${c.status === 'winner' ? ' 🏆' : ''}</div>
       <div class="sub">${esc(c.tribe || 'no tribe')}${c.status === 'out' ? ` · out ep ${esc(c.out_episode ?? '?')}` : ''}</div>
-      <div class="sub">picked to go home ${bootCounts[c.id] || 0}×</div></div>`;
+      <div class="sub">picked to go home ${bootCounts[c.id] || 0}×</div></div></div>`;
     const live = S.data.castaways.filter(c => c.status !== 'out');
     const out = S.data.castaways.filter(c => c.status === 'out').sort((a, b) => (b.out_episode || 0) - (a.out_episode || 0));
     const groups = S.data.league.merged ? [['Merged tribe', live]]
@@ -312,8 +317,9 @@
     const nextEp = Math.max(0, ...S.data.episodes.map(e => e.number)) + 1;
 
     const castRows = [...S.data.castaways].sort((a, b) => (a.status === 'out') - (b.status === 'out') || a.name.localeCompare(b.name))
-      .map(c => `<tr data-cast="${c.id}"><td>${esc(c.name)}</td>
+      .map(c => `<tr data-cast="${c.id}"><td><span class="name-cell">${avatar(c, 'sm')}${esc(c.name)}</span></td>
         <td><input type="text" name="tribe" value="${attr(c.tribe || '')}" data-cast-field="tribe" aria-label="Tribe for ${attr(c.name)}"></td>
+        <td><input type="text" name="photo_url" value="${attr(c.photo_url || '')}" data-cast-field="photo_url" placeholder="img/cast/name.webp" aria-label="Photo link for ${attr(c.name)}"></td>
         <td><select data-cast-field="status" aria-label="Status for ${attr(c.name)}">
           ${['in', 'out', 'winner'].map(s => `<option${c.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
         <td class="num">${c.out_episode ?? ''}</td>
@@ -373,8 +379,8 @@
         <textarea id="ac" name="lines" placeholder="Rowan, Sela&#10;Priya, Lumo"></textarea></div>
         <button type="submit">Add</button>
       </form>
-      ${castRows ? `<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Name</th><th>Tribe</th><th>Status</th><th class="num">Out ep</th><th></th></tr></thead>
-        <tbody>${castRows}</tbody></table></div><p class="small muted">Tribe and status save as soon as you change them.</p>` : ''}
+      ${castRows ? `<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Name</th><th>Tribe</th><th>Photo</th><th>Status</th><th class="num">Out ep</th><th></th></tr></thead>
+        <tbody>${castRows}</tbody></table></div><p class="small muted">Tribe, photo and status save as soon as you change them. Photos can be a file in the site's <code>img/cast/</code> folder or a full https link.</p>` : ''}
     </div>
 
     <div class="card"><h2>Players</h2>
