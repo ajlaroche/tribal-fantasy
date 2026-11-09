@@ -248,6 +248,7 @@
         <li>Correct idol call (yes/no): <strong>+${s.idol}</strong></li>
         <li>Safe pick survives: <strong>+${s.safe}</strong> (can't use the same person two weeks running)</li>
         <li>Sole Survivor: <strong>+${s.winner}</strong>, minus ${s.winnerChangePenalty} per change (min ${s.winnerMin})</li>
+        <li>You can change your weekly picks as often as you like until the episode's lock time.</li>
         <li>Missed a week? You score 0 for it.</li>
       </ul></details>`;
   }
