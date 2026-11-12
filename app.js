@@ -70,7 +70,12 @@
     const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60;
     return 'locks in ' + (d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`);
   }
-  const fmtDate = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // Lock times are one exact moment (the first airing, 8pm ET). Each viewer sees it in their own zone, labeled.
+  const fmtDate = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  const myZone = (() => {
+    try { return new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName').value; }
+    catch (e) { return 'local'; }
+  })();
   function toLocalInput(iso) {
     const d = new Date(iso); const p = n => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -134,7 +139,7 @@
     const st = epStatus(ep);
     let html = `<div class="card"><div class="card-head"><h2>${esc(ep.title || 'Episode ' + ep.number)}</h2>
       <span class="pill ${st}">${st === 'open' ? untilText(ep.lock_at) : st}</span></div>
-      <p class="muted small">Picks lock ${esc(fmtDate(ep.lock_at))}</p>`;
+      <p class="muted small">Picks lock ${esc(fmtDate(ep.lock_at))}, when the episode starts airing</p>`;
 
     if (st === 'open') {
       html += S.me ? viewPickForm(ep) : `<p>Join the league or sign in below to make your picks.</p>`;
@@ -329,10 +334,12 @@
       <div class="standing" style="padding:10px 0">
         <div class="card-head"><strong>${esc(ep.title || 'Episode ' + ep.number)}</strong><span class="pill ${epStatus(ep)}">${epStatus(ep)}</span></div>
         <form data-form="episode-time" data-episode="${ep.number}" class="row" style="align-items:end;margin-top:6px">
-          <div class="field" style="margin:0"><label class="small" for="lock-${ep.number}">Picks lock</label>
+          <div class="field" style="margin:0"><label class="small" for="title-${ep.number}">Title</label>
+          <input id="title-${ep.number}" type="text" name="title" value="${attr(ep.title || '')}" placeholder="Episode ${ep.number}"></div>
+          <div class="field" style="margin:0"><label class="small" for="lock-${ep.number}">Picks lock <span class="hint">(your time, ${esc(myZone)})</span></label>
           <input id="lock-${ep.number}" type="datetime-local" name="lock_at" value="${attr(toLocalInput(ep.lock_at))}" required></div>
-          <button type="submit" class="ghost small" style="flex:0 0 auto">Save time</button>
-          <button type="button" class="small" style="flex:0 0 auto" data-action="toggle-results" data-episode="${ep.number}">${S.openResults === ep.number ? 'Close' : 'Enter results'}</button>
+          <button type="submit" class="ghost small" style="flex:0 0 auto">Save</button>
+          <button type="button" class="small" style="flex:0 0 auto" data-action="toggle-results" data-episode="${ep.number}">${S.openResults === ep.number ? 'Close' : ep.scored ? 'Edit results' : 'Enter results'}</button>
           <button type="button" class="danger small" style="flex:0 0 auto" data-action="del-ep" data-episode="${ep.number}">Delete</button>
         </form>
         ${S.openResults === ep.number ? viewResultsForm(ep) : ''}
@@ -364,12 +371,18 @@
     </div>
 
     <div class="card"><h2>Episodes</h2>
-      <form data-form="new-episode" class="row" style="align-items:end">
+      <div class="row" style="align-items:center">
+        <button type="button" data-action="lookup-ep" style="flex:0 0 auto"${S.lookingUp ? ' disabled' : ''}>${S.lookingUp ? 'Checking the wiki…' : `Look up Episode ${nextEp}`}</button>
+        <span class="small muted">Checks the Survivor ${esc(season())} wiki page and adds Episode ${nextEp} if it's listed, with picks locking 8pm ET on its air date.</span>
+      </div>
+      ${S.lookupMsg ? `<p class="small lookup-msg ${S.lookupMsg.ok ? 'ok' : ''}" role="status">${esc(S.lookupMsg.text)}</p>` : ''}
+      <details class="custom-ep" style="margin-top:10px"><summary class="small">Add an episode by hand</summary>
+      <form data-form="new-episode" class="row" style="align-items:end;margin-top:10px">
         <div class="field" style="margin:0;flex:0 1 90px"><label class="small" for="ne-n">Number</label><input id="ne-n" name="number" type="number" min="1" value="${nextEp}" required></div>
         <div class="field" style="margin:0"><label class="small" for="ne-t">Title <span class="hint">optional</span></label><input id="ne-t" name="title" type="text"></div>
-        <div class="field" style="margin:0"><label class="small" for="ne-l">Picks lock</label><input id="ne-l" name="lock_at" type="datetime-local" required></div>
+        <div class="field" style="margin:0"><label class="small" for="ne-l">Picks lock <span class="hint">(your time, ${esc(myZone)})</span></label><input id="ne-l" name="lock_at" type="datetime-local" required></div>
         <button type="submit" style="flex:0 0 auto">Add episode</button>
-      </form>
+      </form></details>
       ${epRows || '<p class="muted" style="margin-top:12px">No episodes yet.</p>'}
     </div>
 
@@ -406,9 +419,35 @@
           <label class="choice"><input type="radio" name="idolPlayed" value="true"${r.idolPlayed === true ? ' checked' : ''}> Yes</label>
           <label class="choice"><input type="radio" name="idolPlayed" value="false"${r.idolPlayed === false ? ' checked' : ''}> No</label>
         </div></div>
-      <p class="small muted">Saving marks the episode scored and moves voted-out castaways to "out".</p>
-      <button type="submit">Save results</button>
+      <p class="small muted">${ep.scored
+        ? 'Fixing a mistake? Change the boxes and save again. Standings recalculate, and anyone you untick goes back to "in".'
+        : 'Saving marks the episode scored and moves voted-out castaways to "out".'}</p>
+      <button type="submit">${ep.scored ? 'Save corrected results' : 'Save results'}</button>
     </form>`;
+  }
+
+  // ------------------------------------------------------------ wiki lookup
+  const season = () => (window.TF_CONFIG && window.TF_CONFIG.season) || 51;
+
+  async function lookupNextEpisode() {
+    const latest = Math.max(0, ...S.data.episodes.map(e => e.number));
+    const want = latest + 1;
+    S.lookingUp = true; S.lookupMsg = null; render();
+    try {
+      const ep = await window.Wiki.nextEpisode(season(), latest);
+      if (!ep) {
+        S.lookupMsg = { ok: false, text: `Episode ${want} isn't on the wiki yet. It usually shows up a few days before it airs, so try again later.` };
+      } else {
+        const title = ep.title ? `Episode ${ep.number} — "${ep.title}"` : null;
+        await API.upsertEpisode({ number: ep.number, title, lock_at: ep.lock_at });
+        await refresh();
+        S.lookupMsg = { ok: true, text: `Added ${title || 'Episode ' + ep.number}. It airs ${ep.airDate} and picks lock ${fmtDate(ep.lock_at)}. ${new Date(ep.lock_at) > new Date() ? 'Picks are open now.' : 'That lock time has already passed, so the episode is locked.'}`
+          + (ep.title ? '' : ' The wiki has no title yet; you can add one below.') };
+      }
+    } catch (e) {
+      S.lookupMsg = { ok: false, text: e.message || String(e) };
+    }
+    S.lookingUp = false; render();
   }
 
   // ------------------------------------------------------------ events
@@ -447,10 +486,20 @@
         return API.updateLeague({ name: v('name').trim(), merged: fd.has('merged'), winner_locked: fd.has('winner_locked'), scoring: sc });
       }, 'League saved');
       case 'join-code': return run(() => API.setJoinCode(v('code')), 'Join code set');
-      case 'new-episode': return run(() => API.upsertEpisode({
-        number: Number(v('number')), title: v('title').trim() || null, lock_at: new Date(v('lock_at')).toISOString(),
-      }), 'Episode added');
-      case 'episode-time': return run(() => API.upsertEpisode({ number: epNum, lock_at: new Date(v('lock_at')).toISOString() }), 'Lock time saved');
+      case 'new-episode': return run(() => {
+        const n = Number(v('number'));
+        if (S.data.episodes.some(e => e.number === n)) throw new Error(`Episode ${n} already exists. Edit it in the list below instead.`);
+        return API.upsertEpisode({ number: n, title: v('title').trim() || null, lock_at: new Date(v('lock_at')).toISOString() });
+      }, 'Episode added');
+      case 'episode-time': return run(() => {
+        const ep = S.data.episodes.find(e => e.number === epNum);
+        const lock = new Date(v('lock_at'));
+        // Once an episode has locked, its lock time can't move back into the future (that would reopen picks).
+        if (ep && new Date(ep.lock_at) <= new Date() && lock > new Date()) {
+          throw new Error(`Episode ${epNum} is already locked, so its lock time can't be moved later. Picks stay closed.`);
+        }
+        return API.upsertEpisode({ number: epNum, title: v('title').trim() || null, lock_at: lock.toISOString() });
+      }, 'Episode saved');
       case 'add-cast': return run(() => {
         const rows = v('lines').split('\n').map(l => l.trim()).filter(Boolean).map(l => {
           const [name, tribe] = l.split(',').map(s => s.trim());
@@ -491,6 +540,7 @@
     else if (a === 'admin-login') { S.showAdminLogin = true; S.tab = 'admin'; render(); }
     else if (a === 'admin-signout') run(async () => { await API.signOut(); S.tab = 'week'; }, 'Signed out');
     else if (a === 'reset-demo') { if (confirm('Reset all demo data?')) { API.resetDemo(); S.me = null; saveMe(null); run(() => null, 'Demo reset'); } }
+    else if (a === 'lookup-ep') lookupNextEpisode();
     else if (a === 'toggle-results') { const n = Number(b.dataset.episode); S.openResults = S.openResults === n ? null : n; render(); }
     else if (a === 'del-cast') { if (confirm('Remove this castaway? Picks that named them will be cleared.')) run(() => API.deleteCastaway(Number(b.dataset.id)), 'Removed'); }
     else if (a === 'del-ep') { if (confirm('Delete this episode and everyone\'s picks for it?')) run(() => API.deleteEpisode(Number(b.dataset.episode)), 'Episode deleted'); }

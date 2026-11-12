@@ -116,6 +116,20 @@ create policy "read episodes" on episodes for select using (true);
 drop policy if exists "admin episodes" on episodes;
 create policy "admin episodes" on episodes for all to authenticated using (is_admin()) with check (is_admin());
 
+-- Once an episode's lock time has passed, it can never be moved back into the future
+-- (that would reopen picks after people may have seen the episode).
+create or replace function episodes_no_reopen() returns trigger
+language plpgsql as $$
+begin
+  if old.lock_at <= now() and new.lock_at > now() then
+    raise exception 'Episode % is already locked; its lock time cannot be moved later', old.number;
+  end if;
+  return new;
+end $$;
+drop trigger if exists episodes_no_reopen on episodes;
+create trigger episodes_no_reopen before update of lock_at on episodes
+  for each row execute function episodes_no_reopen();
+
 -- managers / picks / winner_picks / league_secrets: no public policies at all.
 -- Players go through the functions below; the commissioner may delete managers.
 -- (A DELETE with a WHERE clause also needs a SELECT policy, hence both.)

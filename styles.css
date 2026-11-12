@@ -161,4 +161,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   max-width: calc(100% - 32px); box-shadow: var(--shadow); font-weight: 600;
 }
 .toast.error { background: var(--bad); color: #fff; }
+.lookup-msg { margin: 10px 0 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.lookup-msg.ok { border-color: var(--good); color: var(--good); }
+.custom-ep summary { cursor: pointer; color: var(--sea); font-weight: 600; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
