@@ -99,6 +99,7 @@
   async function refresh() {
     S.data = await API.loadPublic();
     S.adminUid = await API.getUserId().catch(() => null);
+    S.emails = isAdmin() ? await API.managerEmails().catch(() => null) : null;
     if (S.me) {
       try { S.mine = await API.myPicks(S.me.name, S.me.pin); }
       catch (e) { S.me = null; S.mine = null; saveMe(null); toast('Please sign in again', true); }
@@ -150,6 +151,7 @@
     html += `</div>`;
     if (!S.me) html += viewPlayerGate();
     html += viewWinnerCard();
+    if (S.me) html += viewReminderCard();
     html += viewRulesCard();
     return html;
   }
@@ -216,6 +218,8 @@
           <div class="field"><label for="j-name">Your name</label><input id="j-name" name="name" type="text" maxlength="24" autocomplete="nickname" required></div>
           <div class="field"><label for="j-pin">4-digit PIN</label><input id="j-pin" name="pin" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" required></div>
         </div>
+        ${join ? `<div class="field"><label for="j-email">Email <span class="hint">optional · for a reminder 24h before picks lock</span></label>
+          <input id="j-email" name="email" type="email" autocomplete="email" maxlength="200"></div>` : ''}
         <p class="small muted">No account needed. Remember your PIN — you'll use it if you switch phones.</p>
         <button type="submit">${join ? 'Join' : 'Sign in'}</button>
       </form></div>`;
@@ -246,6 +250,22 @@
       <span class="pill">${champ ? 'winner: ' + esc(champ.name) : locked ? 'locked' : '+' + sc.winner + ' pts'}</span></div>
       ${mineHtml}
       ${popular ? `<p class="small muted" style="margin-top:8px">League favorites</p><div class="chips">${popular}</div>` : ''}</div>`;
+  }
+
+  function viewReminderCard() {
+    const email = S.mine?.email || '';
+    const on = S.mine?.email_reminders !== false;
+    const status = !email ? 'No reminder emails: add your email to get one 24 hours before picks lock (only if you haven\'t picked yet).'
+      : on ? `Reminders go to ${email} 24 hours before picks lock, only if you haven't picked yet.`
+      : `Reminders are off. Your email (${email}) is saved but won't be used.`;
+    return `<details class="card"${email ? '' : ' open'}><summary><strong>Pick reminders</strong> <span class="pill">${email && on ? 'on' : 'off'}</span></summary>
+      <p class="small muted" style="margin-top:10px">${esc(status)}</p>
+      <form data-form="my-email">
+        <div class="field"><label for="m-email">Email <span class="hint">only the commissioner can see it</span></label>
+          <input id="m-email" name="email" type="email" autocomplete="email" maxlength="200" value="${attr(email)}" placeholder="you@example.com"></div>
+        <label class="choice" style="margin-bottom:12px"><input type="checkbox" name="reminders"${on ? ' checked' : ''}> Send me reminders</label>
+        <div><button type="submit">Save</button> <span class="small muted">Leave the email empty and save to remove it.</span></div>
+      </form></details>`;
   }
 
   function viewRulesCard() {
@@ -345,7 +365,15 @@
         ${S.openResults === ep.number ? viewResultsForm(ep) : ''}
       </div>`).join('');
 
-    const mgrRows = S.data.managers.map(m => `<tr><td>${esc(m.name)}</td>
+    const emailOf = id => (S.emails || []).find(e => e.id === id);
+    const reminderCell = m => {
+      const e = emailOf(m.id);
+      if (!S.emails) return '';
+      return `<td class="small">${!e || !e.email ? '<span class="muted">no email</span>'
+        : e.email_reminders ? `✉ ${esc(e.email)}` : `<span class="muted">✉ ${esc(e.email)} (off)</span>`}</td>`;
+    };
+    const withEmail = (S.emails || []).filter(e => e.email && e.email_reminders).length;
+    const mgrRows = S.data.managers.map(m => `<tr><td>${esc(m.name)}</td>${reminderCell(m)}
       <td><button class="ghost small" data-action="reset-pin" data-id="${attr(m.id)}" data-name="${attr(m.name)}">Reset PIN</button>
       <button class="danger small" data-action="del-mgr" data-id="${attr(m.id)}" data-name="${attr(m.name)}">Remove</button></td></tr>`).join('');
 
@@ -398,6 +426,11 @@
 
     <div class="card"><h2>Players</h2>
       ${mgrRows ? `<div class="table-wrap"><table><tbody>${mgrRows}</tbody></table></div>` : '<p class="muted">Nobody has joined yet.</p>'}
+      <hr>
+      <h3>Pick reminders</h3>
+      <p class="small muted">Every hour, players with reminders on who haven't picked get one email once their episode is within 24 hours of locking.
+        ${S.emails ? `${withEmail} of ${S.data.managers.length} players have reminders on.` : ''}</p>
+      <button type="button" class="ghost" data-action="test-reminder">Send me a test reminder</button>
     </div>`;
   }
 
@@ -461,7 +494,7 @@
 
     switch (f.dataset.form) {
       case 'join': return run(async () => {
-        await API.joinLeague(v('code'), v('name'), v('pin'));
+        await API.joinLeague(v('code'), v('name'), v('pin'), v('email').trim());
         S.me = { name: v('name').trim(), pin: v('pin') }; saveMe(S.me);
       }, "You're in! Make your picks.");
       case 'signin': return run(async () => {
@@ -472,6 +505,8 @@
         boot: num(v('boot')), immunity: v('immunity') || null,
         idol: v('idol') === '' ? null : v('idol') === 'true', safe: num(v('safe')),
       }), 'Picks saved');
+      case 'my-email': return run(() => API.setMyEmail(S.me.name, S.me.pin, v('email').trim(), fd.has('reminders')),
+        v('email').trim() ? 'Reminder settings saved' : 'Email removed');
       case 'winner': return run(() => {
         if (!v('castaway')) throw new Error('Choose a castaway');
         return API.setWinnerPick(S.me.name, S.me.pin, Number(v('castaway')));
@@ -541,6 +576,13 @@
     else if (a === 'admin-signout') run(async () => { await API.signOut(); S.tab = 'week'; }, 'Signed out');
     else if (a === 'reset-demo') { if (confirm('Reset all demo data?')) { API.resetDemo(); S.me = null; saveMe(null); run(() => null, 'Demo reset'); } }
     else if (a === 'lookup-ep') lookupNextEpisode();
+    else if (a === 'test-reminder') {
+      b.disabled = true;
+      API.sendTestReminder()
+        .then(r => toast(`Test reminder sent to ${r.sentTo}`))
+        .catch(e => toast('Test failed: ' + (e.message || e), true))
+        .finally(() => { b.disabled = false; });
+    }
     else if (a === 'toggle-results') { const n = Number(b.dataset.episode); S.openResults = S.openResults === n ? null : n; render(); }
     else if (a === 'del-cast') { if (confirm('Remove this castaway? Picks that named them will be cleared.')) run(() => API.deleteCastaway(Number(b.dataset.id)), 'Removed'); }
     else if (a === 'del-ep') { if (confirm('Delete this episode and everyone\'s picks for it?')) run(() => API.deleteEpisode(Number(b.dataset.episode)), 'Episode deleted'); }

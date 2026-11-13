@@ -23,7 +23,19 @@
         ]);
         return { league, castaways, episodes, managers, revealedPicks, winnerPicks };
       },
-      joinLeague: (code, name, pin) => sb.rpc('join_league', { p_code: code, p_name: name, p_pin: pin }).then(must),
+      joinLeague: (code, name, pin, email) => sb.rpc('join_league', { p_code: code, p_name: name, p_pin: pin, p_email: email || null }).then(must),
+      setMyEmail: (name, pin, email, reminders) => sb.rpc('set_my_email', { p_name: name, p_pin: pin, p_email: email || null, p_reminders: reminders }).then(must),
+      // Commissioner only (RLS): which players have reminder emails on.
+      managerEmails: () => sb.from('managers').select('id,email,email_reminders').then(must),
+      sendTestReminder: async () => {
+        const { data, error } = await sb.functions.invoke('send-reminders', { body: { test: true } });
+        if (error) {
+          let msg = error.message;
+          try { const b = await error.context.json(); if (b && b.error) msg = b.error; } catch (e) { /* keep message */ }
+          throw new Error(msg);
+        }
+        return data;
+      },
       myPicks: (name, pin) => sb.rpc('my_picks', { p_name: name, p_pin: pin }).then(must),
       submitPicks: (name, pin, episode, p) => sb.rpc('submit_picks', {
         p_name: name, p_pin: pin, p_episode: episode,
@@ -102,6 +114,12 @@
     function save(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
     function mutate(fn) { const s = load(); const r = fn(s); save(s); return Promise.resolve(r); }
     const clone = x => JSON.parse(JSON.stringify(x));
+    const cleanEmail = e => {
+      const v = String(e || '').trim().toLowerCase();
+      if (!v) return null;
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) fail("That email address doesn't look right");
+      return v;
+    };
     const findMgr = (s, name, pin) =>
       s.managers.find(m => m.name.toLowerCase() === String(name).trim().toLowerCase() && m.pin === pin)
       || fail('Wrong name or PIN');
@@ -121,19 +139,26 @@
           winnerPicks: s.winnerPicks,
         });
       },
-      joinLeague: (code, name, pin) => mutate(s => {
+      joinLeague: (code, name, pin, email) => mutate(s => {
         name = name.trim();
         if (code.trim().toUpperCase() !== s.joinCode) fail('Wrong join code');
         if (!name || name.length > 24) fail('Name must be 1-24 characters');
         if (!/^\d{4}$/.test(pin)) fail('PIN must be 4 digits');
         if (s.managers.some(m => m.name.toLowerCase() === name.toLowerCase())) fail('That name is taken — pick another or sign in');
         const id = 'm' + Date.now();
-        s.managers.push({ id, name, pin, created_at: new Date().toISOString() });
+        s.managers.push({ id, name, pin, email: cleanEmail(email), email_reminders: true, created_at: new Date().toISOString() });
         return id;
       }),
+      setMyEmail: (name, pin, email, reminders) => mutate(s => {
+        const m = findMgr(s, name, pin);
+        m.email = cleanEmail(email); m.email_reminders = reminders !== false;
+      }),
+      managerEmails: async () => clone(load().managers.map(m => ({ id: m.id, email: m.email || null, email_reminders: m.email_reminders !== false }))),
+      sendTestReminder: async () => ({ test: true, sentTo: '(demo mode: nothing sent)' }),
       myPicks: (name, pin) => mutate(s => {
         const m = findMgr(s, name, pin);
-        return clone({ id: m.id, name: m.name, picks: s.picks.filter(p => p.manager_id === m.id),
+        return clone({ id: m.id, name: m.name, email: m.email || null, email_reminders: m.email_reminders !== false,
+          picks: s.picks.filter(p => p.manager_id === m.id),
           winner: s.winnerPicks.find(w => w.manager_id === m.id) || null });
       }),
       submitPicks: (name, pin, episode, p) => mutate(s => {
