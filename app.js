@@ -126,11 +126,13 @@
     const views = { week: viewWeek, standings: viewStandings, history: viewHistory, cast: viewCast, admin: viewAdmin };
     $('#app').innerHTML = demoBanner + (S.tab === 'admin' && !isAdmin() ? viewAdminLogin() : views[S.tab]());
 
-    $('#foot').innerHTML = S.me
-      ? `Playing as <strong>${esc(S.mine?.name || S.me.name)}</strong> · <button class="link" data-action="player-signout">Switch player</button>`
-        + (isAdmin() ? '' : ` · <button class="link" data-action="admin-login">Commissioner</button>`)
-      : (isAdmin() ? '' : `<button class="link" data-action="admin-login">Commissioner sign-in</button>`);
-    if (isAdmin()) $('#foot').innerHTML += `${S.me ? ' · ' : ''}<button class="link" data-action="admin-signout">Commissioner sign out</button>`;
+    const foot = [];
+    if (S.me) foot.push(`<span>Playing as <strong>${esc(S.mine?.name || S.me.name)}</strong></span>`,
+      `<button class="link" data-action="player-signout">Switch player</button>`);
+    foot.push(isAdmin()
+      ? `<button class="link" data-action="admin-signout">Commissioner sign out</button>`
+      : `<button class="link" data-action="admin-login">Commissioner sign-in</button>`);
+    $('#foot').innerHTML = foot.join('');
   }
 
   // ---- This week
@@ -138,15 +140,24 @@
     const ep = currentEpisode();
     if (!ep) return `<div class="card"><h2>No episodes yet</h2><p class="muted">The commissioner hasn't opened any episodes for picks.</p></div>` + viewPlayerGate();
     const st = epStatus(ep);
-    let html = `<div class="card"><div class="card-head"><h2>${esc(ep.title || 'Episode ' + ep.number)}</h2>
-      <span class="pill ${st}">${st === 'open' ? untilText(ep.lock_at) : st}</span></div>
-      <p class="muted small">Picks lock ${esc(fmtDate(ep.lock_at))}, when the episode starts airing</p>`;
+    const t = splitTitle(ep);
+    const torch = st === 'open'
+      ? `<span class="torch"><span class="flame" aria-hidden="true"></span>${esc(untilText(ep.lock_at).replace(/^locks in/, 'Locks in'))}</span>
+         <span class="lock-at">${esc(fmtDate(ep.lock_at))}</span>`
+      : `<span class="torch out"><span class="flame" aria-hidden="true"></span>${st === 'scored' ? 'Scored' : 'Picks locked'}</span>
+         <span class="lock-at">${st === 'scored' ? 'Results are in' : 'Results come after it airs'}</span>`;
+    let html = `<section class="hero" aria-label="This week's episode">
+      <div class="hero-ep">${t.sub ? esc(t.sub) : 'This week'}</div>
+      <h1 class="hero-title">${esc(t.main)}</h1>
+      <div class="countdown">${torch}</div>
+    </section>
+    <div class="card">`;
 
     if (st === 'open') {
       html += S.me ? viewPickForm(ep) : `<p>Join the league or sign in below to make your picks.</p>`;
-      html += `<p class="small muted">Everyone's picks are revealed when the episode locks.</p>`;
+      html += `<p class="small muted" style="margin:14px 0 0">Everyone's picks are revealed when the episode starts airing.</p>`;
     } else {
-      html += viewRevealed(ep);
+      html += `<h2>Everyone's picks</h2>` + viewRevealed(ep);
     }
     html += `</div>`;
     if (!S.me) html += viewPlayerGate();
@@ -156,31 +167,46 @@
     return html;
   }
 
+  // Episode titles are stored like: Episode 9 — "Some Title". Split for the hero.
+  function splitTitle(ep) {
+    const m = String(ep.title || '').match(/^Episode\s+\d+\s*[—-]\s*"?(.+?)"?$/);
+    if (m) return { main: m[1], sub: `Episode ${ep.number}` };
+    const plain = !ep.title || /^Episode\s+\d+$/i.test(ep.title.trim());
+    return { main: plain ? `Episode ${ep.number}` : ep.title, sub: plain ? '' : `Episode ${ep.number}` };
+  }
+  const firstName = n => String(n || '').split(/\s+/)[0];
+
   function viewPickForm(ep) {
     const mine = S.mine?.picks.find(p => p.episode === ep.number) || {};
     const prev = (S.mine?.picks || []).filter(p => p.episode < ep.number).sort((a, b) => b.episode - a.episode)[0];
-    const people = inPlay().map(c => ({ value: c.id, label: c.name + (c.tribe && !S.data.league.merged ? ` (${c.tribe})` : '') }));
-    const immOpts = S.data.league.merged
-      ? inPlay().map(c => ({ value: 'c:' + c.id, label: c.name }))
-      : tribes().map(t => ({ value: 't:' + t, label: t + ' tribe' }));
-    const safeOpts = people.map(o => ({ ...o, disabled: prev && prev.safe === o.value,
-      label: o.label + (prev && prev.safe === o.value ? ' — used last week' : '') }));
     const sc = scoring();
-    const saved = mine.updated_at || mine.boot != null || mine.immunity || mine.safe != null || mine.idol != null;
+    const merged = S.data.league.merged;
+    const saved = mine.boot != null || mine.immunity || mine.safe != null || mine.idol != null;
+
+    const faces = (name, valueOf, selected, disabledId) => `<div class="faces">${inPlay().map(c => {
+      const v = valueOf(c), off = disabledId != null && c.id === disabledId;
+      return `<label class="face"><input type="radio" name="${name}" value="${attr(v)}"${String(selected) === String(v) ? ' checked' : ''}${off ? ' disabled' : ''}>
+        ${avatar(c)}<span class="face-name">${esc(firstName(c.name))}</span>${off ? '<span class="note">used last week</span>' : ''}</label>`;
+    }).join('')}</div>`;
+    const tribeTiles = `<div class="faces tribes">${tribes().map(t =>
+      `<label class="face"><input type="radio" name="immunity" value="${attr('t:' + t)}"${mine.immunity === 't:' + t ? ' checked' : ''}>${esc(t)}</label>`).join('')}</div>`;
+
     return `<form data-form="picks" data-episode="${ep.number}">
-      <div class="field"><label for="p-boot">Who gets voted out? <span class="hint">+${sc.boot}</span></label>
-        <select id="p-boot" name="boot">${options(people, mine.boot)}</select></div>
-      <div class="field"><label for="p-imm">Who wins immunity? <span class="hint">+${sc.immunity} · ${S.data.league.merged ? 'individual' : 'tribe'}</span></label>
-        <select id="p-imm" name="immunity">${options(immOpts, mine.immunity)}</select></div>
-      <div class="field"><label>Will an idol be played? <span class="hint">+${sc.idol}</span></label>
-        <div class="choices">
-          <label class="choice"><input type="radio" name="idol" value="true"${mine.idol === true ? ' checked' : ''}> Yes</label>
-          <label class="choice"><input type="radio" name="idol" value="false"${mine.idol === false ? ' checked' : ''}> No</label>
-        </div></div>
-      <div class="field"><label for="p-safe">Safe pick: who survives? <span class="hint">+${sc.safe} · can't repeat last week's</span></label>
-        <select id="p-safe" name="safe">${options(safeOpts, mine.safe)}</select></div>
-      <button type="submit">${saved ? 'Update picks' : 'Lock in picks'}</button>
-      ${saved ? `<span class="small muted" style="margin-left:8px">Saved ✓ you can change until lock</span>` : ''}
+      <fieldset class="pick"><legend>Who gets voted out? <span class="pts">+${sc.boot}</span></legend>
+        ${faces('boot', c => c.id, mine.boot)}</fieldset>
+      <fieldset class="pick"><legend>Who wins immunity? <span class="pts">+${sc.immunity}</span></legend>
+        ${merged ? faces('immunity', c => 'c:' + c.id, mine.immunity) : tribeTiles}</fieldset>
+      <fieldset class="pick"><legend>Will an idol be played? <span class="pts">+${sc.idol}</span></legend>
+        <div class="seg">
+          <label><input type="radio" name="idol" value="true"${mine.idol === true ? ' checked' : ''}>Yes</label>
+          <label><input type="radio" name="idol" value="false"${mine.idol === false ? ' checked' : ''}>No</label>
+        </div></fieldset>
+      <fieldset class="pick"><legend>Who's safe this week? <span class="pts">+${sc.safe}</span> <span class="hint">can't be last week's safe pick</span></legend>
+        ${faces('safe', c => c.id, mine.safe, prev ? prev.safe : null)}</fieldset>
+      <div class="pick-actions">
+        <button type="submit">${saved ? 'Update picks' : 'Save picks'}</button>
+        ${saved ? `<span class="saved">Saved. You can change them until lock.</span>` : ''}
+      </div>
     </form>`;
   }
 
@@ -202,9 +228,9 @@
 
   function resultsLine(ep) {
     const r = ep.results || {};
-    return `<p><strong>Out:</strong> ${esc((r.votedOut || []).map(castName).join(', ') || 'nobody')} ·
-      <strong>Immunity:</strong> ${esc((r.immunity || []).map(immLabel).join(', ') || '—')} ·
-      <strong>Idol played:</strong> ${r.idolPlayed === true ? 'yes' : r.idolPlayed === false ? 'no' : '—'}</p>`;
+    return `<p class="results"><span><strong>Out:</strong> ${esc((r.votedOut || []).map(castName).join(', ') || 'nobody')}</span>
+      <span><strong>Immunity:</strong> ${esc((r.immunity || []).map(immLabel).join(', ') || 'none')}</span>
+      <span><strong>Idol played:</strong> ${r.idolPlayed === true ? 'yes' : r.idolPlayed === false ? 'no' : 'not entered'}</span></p>`;
   }
 
   function viewPlayerGate() {
@@ -218,7 +244,7 @@
           <div class="field"><label for="j-name">Your name</label><input id="j-name" name="name" type="text" maxlength="24" autocomplete="nickname" required></div>
           <div class="field"><label for="j-pin">4-digit PIN</label><input id="j-pin" name="pin" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" required></div>
         </div>
-        ${join ? `<div class="field"><label for="j-email">Email <span class="hint">optional · for a reminder 24h before picks lock</span></label>
+        ${join ? `<div class="field"><label for="j-email">Email <span class="hint">optional, for a reminder 24h before picks lock</span></label>
           <input id="j-email" name="email" type="email" autocomplete="email" maxlength="200"></div>` : ''}
         <p class="small muted">No account needed. Remember your PIN — you'll use it if you switch phones.</p>
         <button type="submit">${join ? 'Join' : 'Sign in'}</button>
@@ -287,13 +313,13 @@
     const rows = table();
     if (!rows.length) return `<div class="card"><h2>Standings</h2><p class="muted">No players yet.</p></div>`;
     const eps = S.data.episodes.filter(e => e.scored).sort((a, b) => b.number - a.number);
-    const items = rows.map(r => `<details class="standing"><summary>
+    const items = rows.map(r => `<details class="standing${r.rank === 1 && r.total > 0 ? ' leader' : ''}"><summary>
         <span class="rank">${r.rank}</span>
-        <span><strong>${esc(r.name)}</strong><br><span class="sub">last week ${r.lastWeek >= 0 ? '+' : ''}${r.lastWeek} · ${r.accuracy == null ? 'no picks scored' : Math.round(r.accuracy * 100) + '% right'}</span></span>
-        <span class="total">${r.total}</span></summary>
+        <span class="who"><strong>${esc(r.name)}</strong><span class="sub"><span>Last week ${r.lastWeek >= 0 ? '+' : ''}${r.lastWeek}</span><span>${r.accuracy == null ? 'No picks scored yet' : Math.round(r.accuracy * 100) + '% right'}</span></span></span>
+        <span class="total">${r.total}<small>pts</small></span></summary>
       <div class="breakdown small">
-        ${eps.map(e => { const b = r.byEpisode[e.number]; return `<div>Ep ${e.number}: <strong>${b.total}</strong>
-          <span class="muted">(boot ${b.boot}, imm ${b.immunity}, idol ${b.idol}, safe ${b.safe})</span></div>`; }).join('') || '<div class="muted">No scored episodes yet.</div>'}
+        ${eps.map(e => { const b = r.byEpisode[e.number]; return `<div>Episode ${e.number}: <strong>${b.total} pts</strong>
+          <span class="muted">(boot ${b.boot}, immunity ${b.immunity}, idol ${b.idol}, safe ${b.safe})</span></div>`; }).join('') || '<div class="muted">No scored episodes yet.</div>'}
         ${r.winner ? `<div>Sole Survivor bonus: <strong>${r.winner}</strong></div>` : ''}
       </div></details>`).join('');
     return `<div class="card"><h2>Standings</h2><p class="small muted">Tap a player for their week-by-week points.</p>${items}</div>`;
