@@ -45,5 +45,68 @@
     return (await episodes(season)).filter(e => e.number > latest).sort((a, b) => a.number - b.number)[0] || null;
   }
 
-  window.Wiki = { episodes, nextEpisode, lockAt };
+  // ---- castaway profiles (spoiler-free: infobox basics + the pre-season "Profile" Q&A only)
+  // Turn wiki markup into plain text.
+  function plain(s) {
+    let t = String(s || '');
+    t = t.replace(/<ref[^>]*\/>/gi, '').replace(/<ref[\s\S]*?<\/ref>/gi, '');
+    for (let i = 0; i < 5; i++) t = t.replace(/\{\{[^{}]*\}\}/g, '');   // templates, innermost first
+    t = t.replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')               // [[Page|Text]] -> Text
+         .replace(/\[https?:\/\/\S+\s([^\]]+)\]/g, '$1')                   // [url text] -> text
+         .replace(/'''|''/g, '')
+         .replace(/<br\s*\/?>/gi, '\n')
+         .replace(/<[^>]+>/g, '')
+         .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+    return t.replace(/[ \t]+/g, ' ').trim();
+  }
+
+  function ageFrom(birth) {
+    const m = String(birth || '').match(/Birth date and age\|(\d{4})\|(\d{1,2})\|(\d{1,2})/i);
+    if (!m) return null;
+    const b = new Date(+m[1], +m[2] - 1, +m[3]), now = new Date();
+    let age = now.getFullYear() - b.getFullYear();
+    if (now < new Date(now.getFullYear(), b.getMonth(), b.getDate())) age--;
+    return age;
+  }
+
+  const profileCache = {};
+  async function castawayProfile(name) {
+    if (profileCache[name]) return profileCache[name];
+    const j = await call({ action: 'parse', page: name, prop: 'wikitext', redirects: '1' });
+    if (j.error || !j.parse) throw new Error(`The Survivor Wiki has no page for ${name}.`);
+    const src = j.parse.wikitext;
+    const title = j.parse.title;
+
+    // Infobox fields: "| key = value" lines inside {{Contestant ... }}
+    const box = (src.match(/\{\{Contestant([\s\S]*?)\n\}\}/) || [])[1] || '';
+    const field = k => (box.match(new RegExp(`\\|\\s*${k}\\s*=\\s*([^\\n]*)`)) || [])[1] || '';
+
+    // Profile section only (stops at the next heading, so nothing about how the season goes).
+    const prof = (src.match(/==\s*Profile\s*==\n([\s\S]*?)(?=\n==[^=])/) || [])[1] || '';
+    const source = plain((prof.match(/^''(Retrieved from[^']*)''/m) || [])[1] || '');
+    const qa = [];
+    for (const line of prof.split('\n')) {
+      const m = line.match(/^'''(.+?):?'''\s*(.*)$/);
+      if (!m) continue;
+      const q = plain(m[1]).replace(/:$/, ''), a = plain(m[2]);
+      if (q && a) qa.push({ q, a });
+    }
+    const pick = q => qa.find(x => x.q.toLowerCase() === q)?.a;
+
+    const out = {
+      title,
+      url: 'https://survivor.fandom.com/wiki/' + encodeURIComponent(title.replace(/ /g, '_')),
+      age: ageFrom(field('birthdate')) ?? (pick('age') ? Number(pick('age')) : null),
+      hometown: plain(field('hometown')) || pick('hometown') || null,
+      occupation: plain(field('occupation')) || pick('occupation') || null,
+      source,
+      // Skip the basics already shown above the Q&A.
+      qa: qa.filter(x => !['age', 'birthdate', 'hometown', 'current residence', 'occupation', 'name'].includes(x.q.toLowerCase())),
+      residence: pick('current residence') || null,
+    };
+    profileCache[name] = out;
+    return out;
+  }
+
+  window.Wiki = { episodes, nextEpisode, lockAt, castawayProfile };
 })();

@@ -337,16 +337,18 @@
   function viewCast() {
     const bootCounts = {};
     S.data.revealedPicks.forEach(p => { if (p.boot != null) bootCounts[p.boot] = (bootCounts[p.boot] || 0) + 1; });
-    const card = c => `<div class="cast${c.status === 'out' ? ' out' : ''}">${avatar(c)}
-      <div class="cast-info"><div class="name">${esc(c.name)}${c.status === 'winner' ? ' 🏆' : ''}</div>
-      <div class="sub">${esc(c.tribe || 'no tribe')}${c.status === 'out' ? ` · out ep ${esc(c.out_episode ?? '?')}` : ''}</div>
-      <div class="sub">picked to go home ${bootCounts[c.id] || 0}×</div></div></div>`;
+    const card = c => `<button type="button" class="cast${c.status === 'out' ? ' out' : ''}" data-action="castaway" data-id="${c.id}"
+        aria-haspopup="dialog" aria-label="${attr(c.name)}: more about this castaway">${avatar(c)}
+      <span class="cast-info"><span class="name">${esc(c.name)}${c.status === 'winner' ? ' 🏆' : ''}</span>
+      <span class="sub">${esc(c.tribe || 'no tribe')}${c.status === 'out' ? `, out episode ${esc(c.out_episode ?? '?')}` : ''}</span>
+      <span class="sub">picked to go home ${bootCounts[c.id] || 0}×</span></span></button>`;
     const live = S.data.castaways.filter(c => c.status !== 'out');
     const out = S.data.castaways.filter(c => c.status === 'out').sort((a, b) => (b.out_episode || 0) - (a.out_episode || 0));
     const groups = S.data.league.merged ? [['Merged tribe', live]]
       : [...new Set(live.map(c => c.tribe || 'No tribe'))].sort().map(t => [t, live.filter(c => (c.tribe || 'No tribe') === t)]);
     if (!S.data.castaways.length) return `<div class="card"><h2>Castaways</h2><p class="muted">The commissioner hasn't added the cast yet.</p></div>`;
-    return groups.map(([t, list]) => `<div class="card"><h2>${esc(t)} <span class="muted small">${list.length} left</span></h2>
+    return `<p class="small muted">Tap a castaway to see their background.</p>`
+      + groups.map(([t, list]) => `<div class="card"><h2>${esc(t)} <span class="muted small">${list.length} left</span></h2>
       <div class="grid-cast">${list.map(card).join('')}</div></div>`).join('')
       + (out.length ? `<div class="card"><h2>Out of the game</h2><div class="grid-cast">${out.map(card).join('')}</div></div>` : '');
   }
@@ -485,6 +487,51 @@
     </form>`;
   }
 
+  // ------------------------------------------------------------ castaway pop-up
+  // League facts show instantly; the spoiler-free wiki profile loads in underneath.
+  function openCastaway(id) {
+    const c = cast(id);
+    if (!c) return;
+    const dlg = $('#cast-dialog');
+    const boots = S.data.revealedPicks.filter(p => p.boot === c.id).length;
+    const winners = S.data.winnerPicks.filter(w => w.castaway_id === c.id).length;
+    const status = c.status === 'winner' ? 'Sole Survivor 🏆'
+      : c.status === 'out' ? `Out in episode ${c.out_episode ?? '?'}` : 'Still in the game';
+    const head = `<div class="dlg-head">${avatar(c)}
+        <div><h2 id="cast-dlg-title">${esc(c.name)}</h2>
+        <div class="sub">${esc(status)}${c.tribe ? `, ${esc(c.tribe)}` : ''}</div></div>
+        <button type="button" class="ghost small dlg-close" data-action="close-castaway" aria-label="Close">✕</button></div>
+      <div class="dlg-league small">
+        <span>Picked to go home <strong>${boots}×</strong></span>
+        <span>Sole Survivor pick for <strong>${winners}</strong> ${winners === 1 ? 'player' : 'players'}</span>
+      </div>`;
+    const body = inner => {
+      const scroll = dlg.scrollTop;
+      dlg.innerHTML = `<div class="dlg-body">${head}${inner}</div>`;
+      dlg.querySelector('.dlg-close').focus({ preventScroll: true }); // keep keyboard focus inside the pop-up
+      dlg.scrollTop = scroll;
+    };
+
+    body(`<p class="muted small dlg-loading">Loading their profile from the Survivor Wiki…</p>`);
+    if (!dlg.open) dlg.showModal();
+    dlg.dataset.id = c.id;
+
+    window.Wiki.castawayProfile(c.name).then(p => {
+      if (dlg.dataset.id !== String(c.id) || !dlg.open) return;
+      const facts = [['Age', p.age], ['Hometown', p.hometown], ['Lives in', p.residence], ['Job', p.occupation]]
+        .filter(([, v]) => v != null && v !== '');
+      body(`<dl class="dlg-facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+        ${p.qa.length ? `<h3>In their own words</h3><dl class="dlg-qa">${p.qa.map(x =>
+          `<dt>${esc(x.q)}</dt><dd>${esc(x.a)}</dd>`).join('')}</dl>` : '<p class="muted small">No pre-season profile on the wiki yet.</p>'}
+        <p class="small muted dlg-credit">Pre-season profile${p.source ? ` (${esc(p.source.replace(/^Retrieved from\s*/i, 'originally from '))})` : ''}
+          via the <a href="${attr(p.url)}" target="_blank" rel="noopener">Survivor Wiki</a>, CC BY-SA.
+          The wiki page covers the whole season, so it may contain spoilers.</p>`);
+    }).catch(e => {
+      if (dlg.dataset.id !== String(c.id) || !dlg.open) return;
+      body(`<p class="small">Couldn't load their profile: ${esc(e.message || e)} Try again in a minute.</p>`);
+    });
+  }
+
   // ------------------------------------------------------------ wiki lookup
   const season = () => (window.TF_CONFIG && window.TF_CONFIG.season) || 51;
 
@@ -602,6 +649,8 @@
     else if (a === 'admin-signout') run(async () => { await API.signOut(); S.tab = 'week'; }, 'Signed out');
     else if (a === 'reset-demo') { if (confirm('Reset all demo data?')) { API.resetDemo(); S.me = null; saveMe(null); run(() => null, 'Demo reset'); } }
     else if (a === 'lookup-ep') lookupNextEpisode();
+    else if (a === 'castaway') openCastaway(Number(b.dataset.id));
+    else if (a === 'close-castaway') $('#cast-dialog').close();
     else if (a === 'test-reminder') {
       b.disabled = true;
       API.sendTestReminder()
@@ -617,6 +666,12 @@
       const pin = prompt(`New 4-digit PIN for ${b.dataset.name}:`);
       if (pin) run(() => API.resetPin(b.dataset.id, pin.trim()), 'PIN reset — tell them the new one');
     }
+  });
+
+  // Clicking the dimmed area outside the pop-up closes it (Esc already does).
+  document.addEventListener('click', e => {
+    const d = $('#cast-dialog');
+    if (e.target === d) d.close();
   });
 
   // Keep the countdown fresh without refetching.

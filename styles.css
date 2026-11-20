@@ -202,6 +202,36 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .cast { border-radius: var(--r-md); padding: 14px 10px 12px; background: var(--sunk); display: flex; flex-direction: column;
   gap: 8px; align-items: center; text-align: center; }
 .cast .avatar { width: 56px; height: 56px; }
+button.cast { font: inherit; font-weight: 400; color: var(--ink); border: 1px solid transparent; min-height: 0; width: 100%; }
+button.cast:hover { filter: none; border-color: var(--lagoon); }
+.cast-info { display: flex; flex-direction: column; }
+
+/* ---------------------------------------------------------- castaway pop-up */
+.cast-dialog {
+  width: min(560px, calc(100% - 24px)); max-height: min(86vh, 760px); padding: 0;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink);
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.cast-dialog::backdrop { background: rgba(20, 14, 8, .55); }
+.dlg-body { padding: 18px 18px 14px; }
+.dlg-head { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+.dlg-head .avatar { width: 72px; height: 72px; }
+.dlg-head h2 { margin: 0 0 2px; }
+.dlg-close { margin-left: auto; align-self: flex-start; min-width: 40px; }
+.dlg-league { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--sunk); margin-bottom: 14px; }
+.dlg-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 16px; margin: 0 0 16px; }
+.dlg-facts dt { font-size: .8rem; color: var(--muted); }
+.dlg-facts dd { margin: 0; font-weight: 650; }
+.dlg-qa { margin: 0 0 14px; }
+.dlg-qa dt { font-weight: 700; font-size: .92rem; margin-top: 12px; }
+.dlg-qa dd { margin: 2px 0 0; }
+.dlg-credit { border-top: 1px solid var(--line); padding-top: 10px; margin: 6px 0 0; }
+.dlg-credit a { color: var(--sea); }
+.dlg-loading { padding: 18px 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .cast-dialog[open] { animation: dlg-in .16s ease-out; }
+  @keyframes dlg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+}
 .cast .sub { display: block; font-size: .78rem; line-height: 1.35; }
 .cast-info { min-width: 0; }
 .cast .name { font-weight: 750; line-height: 1.25; text-wrap: balance; }
