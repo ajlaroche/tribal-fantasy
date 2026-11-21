@@ -135,10 +135,22 @@
     $('#foot').innerHTML = foot.join('');
   }
 
+  // ---- Commissioner announcement (plain text, line breaks kept, links clickable)
+  function viewAnnouncement() {
+    const text = (S.data.league.announcement || '').trim();
+    if (!text) return '';
+    const when = S.data.league.announcement_at
+      ? new Date(S.data.league.announcement_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    const linked = esc(text).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)"']/g, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+    return `<aside class="announce" aria-label="Announcement from the commissioner">
+      <div class="announce-head"><span aria-hidden="true">📣</span> <strong>From the commissioner</strong>${when ? `<span class="muted small">${esc(when)}</span>` : ''}</div>
+      <p class="announce-text">${linked}</p></aside>`;
+  }
+
   // ---- This week
   function viewWeek() {
     const ep = currentEpisode();
-    if (!ep) return `<div class="card"><h2>No episodes yet</h2><p class="muted">The commissioner hasn't opened any episodes for picks.</p></div>` + viewPlayerGate();
+    if (!ep) return viewAnnouncement() + `<div class="card"><h2>No episodes yet</h2><p class="muted">The commissioner hasn't opened any episodes for picks.</p></div>` + viewPlayerGate();
     const st = epStatus(ep);
     const t = splitTitle(ep);
     const torch = st === 'open'
@@ -146,7 +158,7 @@
          <span class="lock-at">${esc(fmtDate(ep.lock_at))}</span>`
       : `<span class="torch out"><span class="flame" aria-hidden="true"></span>${st === 'scored' ? 'Scored' : 'Picks locked'}</span>
          <span class="lock-at">${st === 'scored' ? 'Results are in' : 'Results come after it airs'}</span>`;
-    let html = `<section class="hero" aria-label="This week's episode">
+    let html = viewAnnouncement() + `<section class="hero" aria-label="This week's episode">
       <div class="hero-ep">${t.sub ? esc(t.sub) : 'This week'}</div>
       <h1 class="hero-title">${esc(t.main)}</h1>
       <div class="countdown">${torch}</div>
@@ -405,7 +417,21 @@
       <td><button class="ghost small" data-action="reset-pin" data-id="${attr(m.id)}" data-name="${attr(m.name)}">Reset PIN</button>
       <button class="danger small" data-action="del-mgr" data-id="${attr(m.id)}" data-name="${attr(m.name)}">Remove</button></td></tr>`).join('');
 
+    const ann = L.announcement || '';
     return `
+    <div class="card"><h2>Announcement</h2>
+      <p class="small muted">Shown to everyone at the top of the This week tab until you change or clear it.</p>
+      <form data-form="announcement">
+        <div class="field"><label for="ann-text" class="small">Message <span class="hint">plain text, links work, up to 1,000 characters</span></label>
+          <textarea id="ann-text" name="text" maxlength="1000" placeholder="e.g. Merge episode tonight! Get your picks in before 8pm ET.">${esc(ann)}</textarea></div>
+        <div class="row" style="align-items:center">
+          <button type="submit" style="flex:0 0 auto">${ann ? 'Update announcement' : 'Post announcement'}</button>
+          ${ann ? `<button type="button" class="danger" style="flex:0 0 auto" data-action="clear-announcement">Remove announcement</button>` : ''}
+          ${ann && L.announcement_at ? `<span class="small muted">Posted ${esc(fmtDate(L.announcement_at))}</span>` : ''}
+        </div>
+      </form>
+    </div>
+
     <div class="card"><h2>League</h2>
       <form data-form="league">
         <div class="field"><label for="l-name">League name</label><input id="l-name" name="name" type="text" value="${attr(L.name)}" required></div>
@@ -594,6 +620,11 @@
         return API.updateLeague({ name: v('name').trim(), merged: fd.has('merged'), winner_locked: fd.has('winner_locked'), scoring: sc });
       }, 'League saved');
       case 'join-code': return run(() => API.setJoinCode(v('code')), 'Join code set');
+      case 'announcement': return run(() => {
+        const text = v('text').trim();
+        if (!text) throw new Error('Type a message first, or use Remove announcement.');
+        return API.updateLeague({ announcement: text, announcement_at: new Date().toISOString() });
+      }, 'Announcement posted');
       case 'new-episode': return run(() => {
         const n = Number(v('number'));
         if (S.data.episodes.some(e => e.number === n)) throw new Error(`Episode ${n} already exists. Edit it in the list below instead.`);
@@ -649,6 +680,10 @@
     else if (a === 'admin-signout') run(async () => { await API.signOut(); S.tab = 'week'; }, 'Signed out');
     else if (a === 'reset-demo') { if (confirm('Reset all demo data?')) { API.resetDemo(); S.me = null; saveMe(null); run(() => null, 'Demo reset'); } }
     else if (a === 'lookup-ep') lookupNextEpisode();
+    else if (a === 'clear-announcement') {
+      if (confirm('Remove the announcement from the This week tab?'))
+        run(() => API.updateLeague({ announcement: null, announcement_at: null }), 'Announcement removed');
+    }
     else if (a === 'castaway') openCastaway(Number(b.dataset.id));
     else if (a === 'close-castaway') $('#cast-dialog').close();
     else if (a === 'test-reminder') {

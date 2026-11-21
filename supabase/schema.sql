@@ -67,6 +67,12 @@ create table if not exists winner_picks (
   updated_at  timestamptz not null default now()
 );
 
+-- Commissioner announcement shown at the top of "This week" (plain text).
+alter table league add column if not exists announcement text;
+alter table league add column if not exists announcement_at timestamptz;
+alter table league drop constraint if exists league_announcement_len;
+alter table league add constraint league_announcement_len check (announcement is null or length(announcement) <= 1000);
+
 insert into league (id) values (1) on conflict do nothing;
 insert into league_secrets (id) values (1) on conflict do nothing;
 

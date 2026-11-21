@@ -80,6 +80,14 @@ code { font-size: .9em; background: var(--sunk); padding: 1px 5px; border-radius
 main { padding-top: 20px; padding-bottom: 32px; }
 .foot { padding-bottom: 40px; color: var(--muted); font-size: .875rem; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
 
+/* ---------------------------------------------------------- commissioner announcement */
+.announce { background: color-mix(in srgb, var(--lagoon) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--lagoon) 35%, var(--line));
+  border-radius: var(--r-md); padding: 14px 16px; margin-bottom: 16px; }
+.announce-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.announce-head .muted { margin-left: auto; }
+.announce-text { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.announce-text a { color: var(--sea); }
+
 /* ---------------------------------------------------------- episode header */
 .hero {
   background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--lagoon);
