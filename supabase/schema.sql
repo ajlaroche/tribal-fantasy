@@ -238,6 +238,10 @@ begin
   if (select winner_locked from league where id = 1) then
     raise exception 'Sole Survivor picks are locked';
   end if;
+  -- Picks lock automatically once only 6 castaways are left in the game.
+  if (select count(*) from castaways where status = 'in') <= 6 then
+    raise exception 'Sole Survivor picks locked when 6 castaways were left';
+  end if;
   if not exists (select 1 from castaways where id = p_castaway and status = 'in') then
     raise exception 'Pick a castaway still in the game';
   end if;

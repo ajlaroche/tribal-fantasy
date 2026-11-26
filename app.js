@@ -2,6 +2,7 @@
 (function () {
   const API = window.API;
   const ME_KEY = 'tf-me';
+  const WINNER_LOCK_AT = 6; // Sole Survivor picks lock once this many castaways are left (also enforced in set_winner_pick)
 
   const S = {
     data: null,       // public league data from API.loadPublic()
@@ -265,8 +266,14 @@
 
   function viewWinnerCard() {
     const sc = scoring();
-    const locked = S.data.league.winner_locked;
+    const left = inPlay().length;
+    const autoLocked = S.data.castaways.length > 0 && left <= WINNER_LOCK_AT;
+    const locked = S.data.league.winner_locked || autoLocked;
     const champ = S.data.castaways.find(c => c.status === 'winner');
+    const lockNote = champ ? ''
+      : autoLocked ? `<p class="small muted">Picks locked when ${WINNER_LOCK_AT} castaways were left.</p>`
+      : locked ? `<p class="small muted">The commissioner has locked Sole Survivor picks.</p>`
+      : `<p class="small muted">Picks lock automatically when ${WINNER_LOCK_AT} castaways are left (${left} left now${left - WINNER_LOCK_AT === 1 ? ', so this is the last week to change' : ''}).</p>`;
     const counts = {};
     S.data.winnerPicks.forEach(w => { counts[w.castaway_id] = (counts[w.castaway_id] || 0) + 1; });
     const popular = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5)
@@ -287,6 +294,7 @@
     return `<div class="card"><div class="card-head"><h2>Sole Survivor pick</h2>
       <span class="pill">${champ ? 'winner: ' + esc(champ.name) : locked ? 'locked' : '+' + sc.winner + ' pts'}</span></div>
       ${mineHtml}
+      ${lockNote}
       ${popular ? `<p class="small muted" style="margin-top:8px">League favorites</p><div class="chips">${popular}</div>` : ''}</div>`;
   }
 
@@ -315,6 +323,7 @@
         <li>Correct idol call (yes/no): <strong>+${s.idol}</strong></li>
         <li>Safe pick survives: <strong>+${s.safe}</strong> (can't use the same person two weeks running)</li>
         <li>Sole Survivor: <strong>+${s.winner}</strong>, minus ${s.winnerChangePenalty} per change (min ${s.winnerMin})</li>
+        <li>Sole Survivor picks lock automatically when ${WINNER_LOCK_AT} castaways are left. After that you keep whatever pick you have, and if you have none, you can't add one.</li>
         <li>You can change your weekly picks as often as you like until the episode's lock time.</li>
         <li>Missed a week? You score 0 for it.</li>
       </ul></details>`;

@@ -177,6 +177,7 @@
       setWinnerPick: (name, pin, cid) => mutate(s => {
         const m = findMgr(s, name, pin);
         if (s.league.winner_locked) fail('Sole Survivor picks are locked');
+        if (s.castaways.filter(c => c.status === 'in').length <= 6) fail('Sole Survivor picks locked when 6 castaways were left');
         if (!s.castaways.some(c => c.id === cid && c.status === 'in')) fail('Pick a castaway still in the game');
         const w = s.winnerPicks.find(x => x.manager_id === m.id);
         if (!w) s.winnerPicks.push({ manager_id: m.id, castaway_id: cid, changes: 0 });
